@@ -1,6 +1,6 @@
 // ================== CONFIG & STATE ==================
 const WEB_APP_URL =
-  "https://script.google.com/macros/s/AKfycbzCFP8SKAJgKQ0h6PttLD1gzj1ZfLhgGt8X5Ke9l35nBNBPp6FeKNKD8HlVBsFWQVOY/exec";
+  "https://script.google.com/macros/s/AKfycbyyDLa1hV05iL0ikH_VsShbwtk3Xa8bEbsD6IcmRFkQ-dxntqJXTR38b87g-U7ILrR-/exec";
 
 let currentUser = null;
 let currentRole = null;
@@ -1501,3 +1501,4 @@ document.addEventListener("DOMContentLoaded", async () => {
     toast("Anda telah keluar.");
   });
 });
+
