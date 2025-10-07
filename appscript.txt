@@ -1,0 +1,408 @@
+function doGet(e) {
+try {
+const p = e.parameter || {};
+const action = String(p.action || '').toLowerCase();
+const ss = getSS_();
+
+// READ
+if (action === 'listusers')      return json_(listUsers_(ss));
+if (action === 'listguru')       return json_(listGuru_(ss));
+if (action === 'listkelas')      return json_(listKelas_(ss));
+//if (action === 'listabsensi')    return json_(listAbsensi_(ss));
+
+if (action === 'listabsensi') {
+    const start = parseInt(e.parameter.startRow || "0");
+    const limit = parseInt(e.parameter.limit || "500"); // default batasi 500 baris
+    const filterKelas = e.parameter.kelas || null;
+    const filterGuru = e.parameter.guru || null;
+    const filterStart = e.parameter.start || null; // tanggal mulai
+    const filterEnd = e.parameter.end || null; // tanggal akhir
+
+    return json_(
+      listAbsensi_(ss, start, limit, filterKelas, filterGuru, filterStart, filterEnd)
+    );
+  }
+
+// AUTH
+if (action === 'checklogin')     return json_(checkLogin_(ss, p));
+
+// WRITE (enabled via GET for simplicity)
+if (action === 'createabsensi')        return json_(createAbsensi_(ss, p));
+if (action === 'changepassword')       return json_(changePassword_(ss, p));
+if (action === 'resetpassworddefault') return json_(resetPasswordDefault_(ss));
+
+if (action === 'upsertguru')     return json_(upsertGuru_(ss, p));
+if (action === 'deleteguru')     return json_(deleteGuru_(ss, p));
+if (action === 'upsertkelas')    return json_(upsertKelas_(ss, p));
+if (action === 'deletekelas')    return json_(deleteKelas_(ss, p));
+
+return json_({ ok:false, error:'Unknown action' });
+
+} catch (err) {
+return json_({ ok:false, error:String(err) });
+}
+}
+
+function doPost(e) {
+try {
+// Optional: still accept POST with same actions
+const data = e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
+const action = String((data.action || '')).toLowerCase();
+const ss = getSS_();
+
+if (action === 'createabsensi')        return json_(createAbsensi_(ss, data));
+if (action === 'changepassword')       return json_(changePassword_(ss, data));
+if (action === 'resetpassworddefault') return json_(resetPasswordDefault_(ss));
+
+if (action === 'upsertguru')     return json_(upsertGuru_(ss, data));
+if (action === 'deleteguru')     return json_(deleteGuru_(ss, data));
+if (action === 'upsertkelas')    return json_(upsertKelas_(ss, data));
+if (action === 'deletekelas')    return json_(deleteKelas_(ss, data));
+
+// Also allow reads on POST (not necessary, but harmless)
+if (action === 'listusers')      return json_(listUsers_(ss));
+if (action === 'listguru')       return json_(listGuru_(ss));
+if (action === 'listkelas')      return json_(listKelas_(ss));
+if (action === 'listabsensi')    return json_(listAbsensi_(ss));
+if (action === 'checklogin')     return json_(checkLogin_(ss, data));
+
+return json_({ ok:false, error:'Unknown action' });
+
+} catch (err) {
+return json_({ ok:false, error:String(err) });
+}
+}
+
+/* ========== Helpers ========== */
+function getSS_() {
+// Jika ingin mengunci ke file tertentu, isi ID-nya:
+// return SpreadsheetApp.openById('SPREADSHEET_ID');
+return SpreadsheetApp.getActiveSpreadsheet();
+}
+function sheet_(ss, name) {
+return ss.getSheetByName(name) || ss.insertSheet(name);
+}
+function json_(obj) {
+return ContentService.createTextOutput(JSON.stringify(obj))
+.setMimeType(ContentService.MimeType.JSON);
+}
+function readTable_(sh) {
+const rng = sh.getDataRange();
+const vals = rng.getValues();
+if (!vals.length) return [];
+const head = (vals[0] || []).map(v => String(v).trim());
+const rows = [];
+for (let i = 1; i < vals.length; i++) {
+const row = vals[i];
+if (String(row.join('')).trim() === '') continue;
+const o = {};
+head.forEach((h, idx) => o[h] = row[idx]);
+rows.push(o);
+}
+return rows;
+}
+function writeRow_(sh, arr) { sh.appendRow(arr); }
+function ensureHeaders_(sh, headers) {
+const rng = sh.getRange(1,1,1, headers.length);
+const vals = rng.getValues();
+const current = (vals[0] || []).map(x => String(x).trim());
+let need = false;
+for (let i=0;i<headers.length;i++){
+if (current[i] !== headers[i]) { need = true; break; }
+}
+if (need) rng.setValues([headers]);
+}
+
+/* ========== READ actions ========== */
+/*function listUsers_(ss){
+const sh = sheet_(ss, 'Data User');
+ensureHeaders_(sh, ['Nama Lengkap','Username','Password','Role']);
+const data = readTable_(sh);
+return { ok:true, data };
+}*/
+
+//update listuser
+function listUsers_(ss) {
+  const sh = sheet_(ss, 'Data User');
+  // Pastikan header ada
+  ensureHeaders_(sh, ['Nama Lengkap','Username','Password','Role']);
+  
+  // Ambil semua data selain header
+  const data = readTable_(sh);
+  
+  // Bersihkan biar aman
+  const clean = data.map(r => ({
+    'Nama Lengkap': String(r['Nama Lengkap'] || '').trim(),
+    'Username': String(r['Username'] || '').trim(),
+    'Password': String(r['Password'] || '').trim(),
+    'Role': String(r['Role'] || '').trim()
+  }));
+
+  return { ok: true, data: clean };
+}
+
+function listGuru_(ss) {
+  const sh = sheet_(ss, 'Data Guru');
+  // Pastikan header ada dan urut
+  ensureHeaders_(sh, ['Nama Guru','Mata Pelajaran','Jumlah JP']);
+  
+  // Ambil semua data (selain baris header)
+  const data = readTable_(sh);
+  
+  // Bersihkan data biar aman (misalnya trim spasi)
+  const clean = data.map(r => ({
+    'Nama Guru': String(r['Nama Guru'] || '').trim(),
+    'Mata Pelajaran': String(r['Mata Pelajaran'] || '').trim(),
+    'Jumlah JP': Number(r['Jumlah JP'] || 0)
+  }));
+
+  return { ok: true, data: clean };
+}
+
+function listKelas_(ss) {
+  const sh = sheet_(ss, 'Data Kelas');
+  // Pastikan header ada
+  ensureHeaders_(sh, ['Nama Kelas','Username','Password']);
+  
+  // Ambil semua data selain header
+  const data = readTable_(sh);
+  
+  // Bersihkan data biar aman
+  const clean = data.map(r => ({
+    'Nama Kelas': String(r['Nama Kelas'] || '').trim(),
+    'Username': String(r['Username'] || '').trim(),
+    'Password': String(r['Password'] || '').trim()
+  }));
+
+  return { ok: true, data: clean };
+}
+
+function listAbsensi_(ss, start, limit, filterKelas, filterGuru, filterStart, filterEnd) {
+  const sh = sheet_(ss, 'Absensi');
+  let data = readTable_(sh);
+
+  // Format tanggal
+  data = data.map(row => {
+    if (row.Tanggal instanceof Date) {
+      row.Tanggal = Utilities.formatDate(
+        row.Tanggal,
+        Session.getScriptTimeZone(),
+        "yyyy-MM-dd"
+      );
+    }
+    return row;
+  });
+
+  // filter berdasarkan kelas
+  if (filterKelas) {
+    data = data.filter(r => r.Kelas === filterKelas);
+  }
+
+  // filter berdasarkan guru
+  if (filterGuru) {
+    data = data.filter(r => r["Nama Guru"] === filterGuru);
+  }
+
+  // filter tanggal
+  if (filterStart || filterEnd) {
+    const startDate = filterStart ? new Date(filterStart) : new Date('1970-01-01');
+    const endDate = filterEnd ? new Date(filterEnd) : new Date('3000-01-01');
+    data = data.filter(r => {
+      const d = new Date(r.Tanggal);
+      return d >= startDate && d <= endDate;
+    });
+  }
+
+  // pagination
+  const sliced = data.slice(start, start + limit);
+
+  return {
+    ok: true,
+    total: data.length,
+    start,
+    limit,
+    data: sliced
+  };
+}
+
+
+
+
+/* ========== AUTH ========== */
+function checkLogin_(ss, p){
+const user = String(p.username||'').trim();
+const role = String(p.role||'').trim();
+const pass = String(p.password||'');
+if (!user || !pass || !role) return { ok:false, error:'Incomplete' };
+const sh = sheet_(ss, 'Data User');
+ensureHeaders_(sh, ['Nama Lengkap','Username','Password','Role']);
+const data = readTable_(sh);
+const found = data.find(r => String(r.Username).trim().toLowerCase() === user.toLowerCase() &&
+String(r.Password) === pass &&
+String(r.Role).trim().toLowerCase() === role.toLowerCase());
+if (!found) return { ok:false, error:'Username/Password/Role salah' };
+return { ok:true, name: String(found['Nama Lengkap']||user) };
+}
+
+/* ========== WRITE actions ========== */
+function createAbsensi_(ss, d){
+  const sh = sheet_(ss, 'Absensi');
+
+  const hari = String(d.hari||'').trim();
+  const tanggal = String(d.tanggal||'').trim();
+  const kelas = String(d.kelas||'').trim();
+  const jamStr = String(d.jam||'').replace(/,/g,'|').replace(/\s+/g,'');
+  const namaGuru = String(d.namaGuru||'').trim();
+  const mapel = String(d.mapel||'').trim();
+  const status = String(d.status||'').trim();
+  const ket = String(d.keterangan||'').trim();
+  const by = String(d.inputOleh||'').trim();
+
+  if (!tanggal || !kelas || !jamStr || !namaGuru || !status) {
+    return { ok:false, error:'Data kurang (minimal tanggal, kelas, jam, namaGuru, status)' };
+  }
+
+  // ✅ langsung pakai Date object (lebih cepat daripada formatDate)
+  const timeStamp = new Date();
+
+  // 🚀 lebih cepat daripada appendRow
+  const values = [hari, tanggal, kelas, jamStr, namaGuru, mapel, status, ket, by, timeStamp];
+  const lastRow = sh.getLastRow();
+  sh.getRange(lastRow+1, 1, 1, values.length).setValues([values]);
+
+  // ❌ jangan hapus cache di sini, biarkan expired sendiri (misal TTL 60s)
+  return { ok:true };
+}
+
+
+function changePassword_(ss, d){
+// Params: username, oldPass, newPass
+const user = String(d.username||'').trim();
+const oldP = String(d.oldPass||'');
+const newP = String(d.newPass||'');
+if (!user || !oldP || !newP) return { ok:false, error:'Incomplete' };
+
+const sh = sheet_(ss, 'Data User');
+ensureHeaders_(sh, ['Nama Lengkap','Username','Password','Role']);
+const vals = sh.getDataRange().getValues();
+const head = vals[0];
+const mUser = head.indexOf('Username');
+const mPass = head.indexOf('Password');
+
+for (let i=1;i<vals.length;i++){
+if (String(vals[i][mUser]).trim().toLowerCase() === user.toLowerCase() &&
+String(vals[i][mPass]) === oldP){
+sh.getRange(i+1, mPass+1).setValue(newP);
+return { ok:true };
+}
+}
+return { ok:false, error:'Password lama salah' };
+}
+
+function resetPasswordDefault_(ss){
+const sh = sheet_(ss, 'Data User');
+ensureHeaders_(sh, ['Nama Lengkap','Username','Password','Role']);
+const vals = sh.getDataRange().getValues();
+const head = vals[0];
+const mPass = head.indexOf('Password');
+for (let i=1;i<vals.length;i++){
+sh.getRange(i+1, mPass+1).setValue('123456');
+}
+return { ok:true };
+}
+
+/* ========== MASTER GURU ========== */
+function upsertGuru_(ss, d){
+// Params: namaGuru, mapel, jp
+const nama = String(d.namaGuru||'').trim();
+const mapel= String(d.mapel||'').trim();
+const jp   = Number(d.jp||0);
+if (!nama || !mapel || !jp) return { ok:false, error:'Data kurang (namaGuru, mapel, jp)' };
+
+const sh = sheet_(ss, 'Data Guru');
+ensureHeaders_(sh, ['Nama Guru','Mata Pelajaran','Jumlah JP']);
+const vals = sh.getDataRange().getValues();
+const head = vals[0];
+const mNama = head.indexOf('Nama Guru');
+const mMapel= head.indexOf('Mata Pelajaran');
+const mJP   = head.indexOf('Jumlah JP');
+
+let updated = false;
+for (let i=1;i<vals.length;i++){
+if (String(vals[i][mNama]).trim().toLowerCase() === nama.toLowerCase()){
+sh.getRange(i+1, mMapel+1).setValue(mapel);
+sh.getRange(i+1, mJP+1).setValue(jp);
+updated = true; break;
+}
+}
+if (!updated) writeRow_(sh, [nama, mapel, jp]);
+return { ok:true };
+}
+function deleteGuru_(ss, d){
+// Params: namaGuru
+const target = String(d.namaGuru||'').trim().toLowerCase();
+if (!target) return { ok:false, error:'namaGuru kosong' };
+
+const sh = sheet_(ss, 'Data Guru');
+ensureHeaders_(sh, ['Nama Guru','Mata Pelajaran','Jumlah JP']);
+const vals = sh.getDataRange().getValues();
+const head = vals[0];
+const mNama = head.indexOf('Nama Guru');
+
+for (let i=1;i<vals.length;i++){
+if (String(vals[i][mNama]).trim().toLowerCase() === target){
+sh.deleteRow(i+1);
+return { ok:true };
+}
+}
+return { ok:false, error:'Guru tidak ditemukan' };
+}
+
+/* ========== MASTER KELAS ========== */
+function upsertKelas_(ss, d){
+// Params: namaKelas, username, password
+const nama = String(d.namaKelas||'').trim();
+const user = String(d.username||'').trim();
+const pass = String(d.password||'').trim();
+
+if (!nama) return { ok:false, error:'namaKelas kosong' };
+
+const sh = sheet_(ss, 'Data Kelas');
+ensureHeaders_(sh, ['Nama Kelas','Username','Password']);
+const vals = sh.getDataRange().getValues();
+const head = vals[0];
+const mNama = head.indexOf('Nama Kelas');
+const mUser = head.indexOf('Username');
+const mPass = head.indexOf('Password');
+
+let updated = false;
+for (let i=1;i<vals.length;i++){
+if (String(vals[i][mNama]).trim().toLowerCase() === nama.toLowerCase()){
+sh.getRange(i+1, mUser+1).setValue(user);
+sh.getRange(i+1, mPass+1).setValue(pass);
+updated = true; break;
+}
+}
+if (!updated) writeRow_(sh, [nama, user, pass]);
+
+return { ok:true };
+}
+function deleteKelas_(ss, d){
+// Params: namaKelas
+const target = String(d.namaKelas||'').trim().toLowerCase();
+if (!target) return { ok:false, error:'namaKelas kosong' };
+
+const sh = sheet_(ss, 'Data Kelas');
+ensureHeaders_(sh, ['Nama Kelas','Username','Password']);
+const vals = sh.getDataRange().getValues();
+const head = vals[0];
+const mNama = head.indexOf('Nama Kelas');
+
+for (let i=1;i<vals.length;i++){
+if (String(vals[i][mNama]).trim().toLowerCase() === target){
+sh.deleteRow(i+1);
+return { ok:true };
+}
+}
+return { ok:false, error:'Kelas tidak ditemukan' };
+}
